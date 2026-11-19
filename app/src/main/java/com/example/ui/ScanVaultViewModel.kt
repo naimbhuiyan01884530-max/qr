@@ -44,6 +44,12 @@ sealed interface UiEvent {
     data object TriggerHaptic : UiEvent
 }
 
+data class DetectedBarcodeItem(
+    val rawValue: String,
+    val formatCode: Int,
+    val processingTimeMs: Long = 1L
+)
+
 data class ActiveScanSheet(
     val recordId: Long?,
     val parsed: ParsedBarcode,
@@ -66,6 +72,12 @@ class ScanVaultViewModel(
 
     private val _activeScanSheet = MutableStateFlow<ActiveScanSheet?>(null)
     val activeScanSheet: StateFlow<ActiveScanSheet?> = _activeScanSheet.asStateFlow()
+
+    private val _multiScanBatch = MutableStateFlow<List<ActiveScanSheet>>(emptyList())
+    val multiScanBatch: StateFlow<List<ActiveScanSheet>> = _multiScanBatch.asStateFlow()
+
+    private val _isMultiScanSheetOpen = MutableStateFlow(false)
+    val isMultiScanSheetOpen: StateFlow<Boolean> = _isMultiScanSheetOpen.asStateFlow()
 
     private val _selectedHistoryId = MutableStateFlow<Long?>(null)
     val selectedHistoryId: StateFlow<Long?> = _selectedHistoryId.asStateFlow()
@@ -147,20 +159,76 @@ class ScanVaultViewModel(
     private var lastLiveScanRaw: String? = null
     private var lastLiveScanTime: Long = 0L
 
-    fun onLiveBarcodeDetected(rawValue: String, formatCode: Int, processingTimeMs: Long = 1L) {
-        if (_isScanningPaused.value || _activeScanSheet.value != null) return
-        val now = System.currentTimeMillis()
-        if (rawValue == lastLiveScanRaw && (now - lastLiveScanTime) < 2500L) return
+    fun onLiveBarcodesDetected(items: List<DetectedBarcodeItem>) {
+        if (items.isEmpty() || _isScanningPaused.value || _activeScanSheet.value != null || _isMultiScanSheetOpen.value) {
+            return
+        }
 
-        lastLiveScanRaw = rawValue
+        val prefs = preferences.value
+        val distinctItems = items.distinctBy { it.rawValue }.filter { it.rawValue.isNotBlank() }
+        if (distinctItems.isEmpty()) return
+
+        // Multi-QR mode OR multiple distinct codes visible simultaneously in one frame
+        if (prefs.continuousMode || distinctItems.size > 1) {
+            val existingRaws = if (prefs.continuousMode) {
+                _multiScanBatch.value.map { it.parsed.rawValue }.toHashSet()
+            } else {
+                emptySet()
+            }
+            val newItems = distinctItems.filter { it.rawValue !in existingRaws }
+            if (newItems.isEmpty()) return
+
+            viewModelScope.launch {
+                val createdSheets = mutableListOf<ActiveScanSheet>()
+                for (item in newItems) {
+                    val parsed = OfflineBarcodeParser.parse(
+                        rawValue = item.rawValue,
+                        formatCode = item.formatCode,
+                        processingTimeMs = item.processingTimeMs.coerceAtLeast(1L)
+                    )
+                    val saved = historyRepository.saveScan(parsed, force = true)
+                    createdSheets += ActiveScanSheet(
+                        recordId = saved.id,
+                        parsed = parsed,
+                        scannedAtMillis = saved.scannedAtMillis,
+                        isPinned = saved.isPinned,
+                        note = saved.note
+                    )
+                }
+
+                if (createdSheets.isNotEmpty()) {
+                    if (prefs.hapticFeedback) {
+                        _events.tryEmit(UiEvent.TriggerHaptic)
+                    }
+                    if (prefs.continuousMode) {
+                        _multiScanBatch.value = createdSheets.reversed() + _multiScanBatch.value
+                        if (prefs.autoCopyOnScan && createdSheets.size == 1) {
+                            _events.tryEmit(UiEvent.AutoCopyPayload(createdSheets.first().parsed.primaryCopyValue))
+                        }
+                    } else {
+                        // Multiple codes seen at once in Single mode -> open Multi-QR results sheet
+                        _multiScanBatch.value = createdSheets
+                        _isScanningPaused.value = true
+                        _isMultiScanSheetOpen.value = true
+                    }
+                }
+            }
+            return
+        }
+
+        // Standard Single Scan
+        val single = distinctItems.first()
+        val now = System.currentTimeMillis()
+        if (single.rawValue == lastLiveScanRaw && (now - lastLiveScanTime) < 2500L) return
+
+        lastLiveScanRaw = single.rawValue
         lastLiveScanTime = now
 
         val parsed = OfflineBarcodeParser.parse(
-            rawValue = rawValue,
-            formatCode = formatCode,
-            processingTimeMs = processingTimeMs.coerceAtLeast(1L)
+            rawValue = single.rawValue,
+            formatCode = single.formatCode,
+            processingTimeMs = single.processingTimeMs.coerceAtLeast(1L)
         )
-        val prefs = preferences.value
 
         viewModelScope.launch {
             val saved = historyRepository.saveScan(parsed)
@@ -170,18 +238,14 @@ class ScanVaultViewModel(
             if (prefs.autoCopyOnScan) {
                 _events.tryEmit(UiEvent.AutoCopyPayload(parsed.primaryCopyValue))
             }
-            if (prefs.continuousMode) {
-                _events.tryEmit(UiEvent.ShowMessage("${parsed.title}"))
-            } else {
-                _isScanningPaused.value = true
-                _activeScanSheet.value = ActiveScanSheet(
-                    recordId = saved.id,
-                    parsed = parsed,
-                    scannedAtMillis = saved.scannedAtMillis,
-                    isPinned = saved.isPinned,
-                    note = saved.note
-                )
-            }
+            _isScanningPaused.value = true
+            _activeScanSheet.value = ActiveScanSheet(
+                recordId = saved.id,
+                parsed = parsed,
+                scannedAtMillis = saved.scannedAtMillis,
+                isPinned = saved.isPinned,
+                note = saved.note
+            )
         }
     }
 
@@ -191,38 +255,93 @@ class ScanVaultViewModel(
             try {
                 val results = withContext(Dispatchers.IO) {
                     OfflineBarcodeDecoder.decodeFromImageUri(appContext, uri)
-                }
+                }.distinctBy { it.rawValue }
+
                 if (results.isEmpty()) {
-                    _events.tryEmit(UiEvent.ShowMessage("No QR code or barcode detected in image"))
+                    _events.tryEmit(UiEvent.ShowMessage("No QR code or barcode detected"))
                 } else {
-                    val primary = results.first()
-                    val saved = historyRepository.saveScan(primary, force = true)
-                    if (results.size > 1) {
-                        results.drop(1).forEach { extra ->
-                            historyRepository.saveScan(extra, force = true)
-                        }
-                    }
                     val prefs = preferences.value
+                    val savedSheets = results.map { parsed ->
+                        val saved = historyRepository.saveScan(parsed, force = true)
+                        ActiveScanSheet(
+                            recordId = saved.id,
+                            parsed = parsed,
+                            scannedAtMillis = saved.scannedAtMillis,
+                            isPinned = saved.isPinned,
+                            note = saved.note
+                        )
+                    }
+
                     if (prefs.hapticFeedback) {
                         _events.tryEmit(UiEvent.TriggerHaptic)
                     }
-                    if (prefs.autoCopyOnScan) {
-                        _events.tryEmit(UiEvent.AutoCopyPayload(primary.primaryCopyValue))
+
+                    if (savedSheets.size > 1 || prefs.continuousMode) {
+                        val existingRaws = if (prefs.continuousMode) {
+                            _multiScanBatch.value.map { it.parsed.rawValue }.toHashSet()
+                        } else {
+                            emptySet()
+                        }
+                        val filteredNew = savedSheets.filter { it.parsed.rawValue !in existingRaws }
+                        _multiScanBatch.value = if (prefs.continuousMode) {
+                            filteredNew.reversed() + _multiScanBatch.value
+                        } else {
+                            savedSheets
+                        }
+                        _isScanningPaused.value = true
+                        _isMultiScanSheetOpen.value = true
+                    } else {
+                        val primary = savedSheets.first()
+                        if (prefs.autoCopyOnScan) {
+                            _events.tryEmit(UiEvent.AutoCopyPayload(primary.parsed.primaryCopyValue))
+                        }
+                        _isScanningPaused.value = true
+                        _activeScanSheet.value = primary
                     }
-                    _isScanningPaused.value = true
-                    _activeScanSheet.value = ActiveScanSheet(
-                        recordId = saved.id,
-                        parsed = primary,
-                        scannedAtMillis = saved.scannedAtMillis,
-                        isPinned = saved.isPinned,
-                        note = saved.note
-                    )
                 }
             } catch (e: Exception) {
                 _events.tryEmit(UiEvent.ShowMessage("Could not read image: ${e.localizedMessage ?: "error"}"))
             } finally {
                 _isDecodingImage.value = false
             }
+        }
+    }
+
+    fun openMultiScanSheet() {
+        if (_multiScanBatch.value.isNotEmpty()) {
+            _isScanningPaused.value = true
+            _isMultiScanSheetOpen.value = true
+        }
+    }
+
+    fun dismissMultiScanSheet() {
+        _isMultiScanSheetOpen.value = false
+        if (_activeScanSheet.value == null) {
+            _isScanningPaused.value = false
+        }
+    }
+
+    fun inspectMultiScanItem(item: ActiveScanSheet) {
+        _isMultiScanSheetOpen.value = false
+        _isScanningPaused.value = true
+        _activeScanSheet.value = item
+    }
+
+    fun removeMultiScanItem(item: ActiveScanSheet) {
+        val updated = _multiScanBatch.value.filterNot {
+            it.recordId == item.recordId && it.parsed.rawValue == item.parsed.rawValue
+        }
+        _multiScanBatch.value = updated
+        if (updated.isEmpty()) {
+            dismissMultiScanSheet()
+        }
+    }
+
+    fun clearMultiScanBatch() {
+        _multiScanBatch.value = emptyList()
+        _isMultiScanSheetOpen.value = false
+        if (_activeScanSheet.value == null) {
+            _isScanningPaused.value = false
         }
     }
 
@@ -255,16 +374,23 @@ class ScanVaultViewModel(
                     _activeScanSheet.value = active.copy(isPinned = !currentlyPinned)
                 }
             }
+            _multiScanBatch.value = _multiScanBatch.value.map { item ->
+                if (item.recordId == id) item.copy(isPinned = !currentlyPinned) else item
+            }
         }
     }
 
     fun savePersonalNote(id: Long, note: String) {
         viewModelScope.launch {
             historyRepository.updateNote(id, note)
+            val trimmed = note.trim()
             _activeScanSheet.value?.let { active ->
                 if (active.recordId == id) {
-                    _activeScanSheet.value = active.copy(note = note.trim())
+                    _activeScanSheet.value = active.copy(note = trimmed)
                 }
+            }
+            _multiScanBatch.value = _multiScanBatch.value.map { item ->
+                if (item.recordId == id) item.copy(note = trimmed) else item
             }
             _events.tryEmit(UiEvent.ShowMessage(currentStrings().noteSavedMsg))
         }
@@ -279,6 +405,7 @@ class ScanVaultViewModel(
             if (_activeScanSheet.value?.recordId == id) {
                 dismissActiveScanSheet()
             }
+            _multiScanBatch.value = _multiScanBatch.value.filterNot { it.recordId == id }
         }
     }
 
@@ -297,7 +424,7 @@ class ScanVaultViewModel(
     ) {
         viewModelScope.launch {
             val formatCode = if (isCode128) Barcode.FORMAT_CODE_128 else Barcode.FORMAT_QR_CODE
-            val ecText = if (isCode128) "Mod-103 Checksum" else "QR Level ${ecLevel.shortCode}"
+            val ecText = if (isCode128) "Mod-103" else "QR ${ecLevel.shortCode}"
             val parsed = OfflineBarcodeParser.parse(
                 rawValue = payload,
                 formatCode = formatCode,

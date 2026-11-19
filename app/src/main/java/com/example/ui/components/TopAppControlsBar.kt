@@ -131,7 +131,7 @@ fun BrandHeaderChip(
         )
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -143,9 +143,11 @@ fun BrandHeaderChip(
             )
             Text(
                 text = badgeText,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = textColor
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = textColor,
+                maxLines = 1,
+                softWrap = false
             )
         }
     }

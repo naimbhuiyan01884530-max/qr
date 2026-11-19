@@ -153,17 +153,22 @@ fun HistoryScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
                         Text(
-                            text = strings.vaultTitle,
+                            text = strings.historyTitle,
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold
                         )
-                        Text(
-                            text = strings.vaultSubtitleCount(totalCount),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (totalCount > 0) {
+                            FormatTagPill(
+                                label = strings.historyCountLabel(totalCount),
+                                accentColor = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
                     ThemeAndLanguageActions(
@@ -596,13 +601,13 @@ private fun EmptyHistoryState(
                 )
             }
             Text(
-                text = if (isFiltered) strings.emptyFilterTitle else strings.emptyVaultTitle,
+                text = if (isFiltered) strings.emptyFilterTitle else strings.emptyHistoryTitle,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center
             )
             Text(
-                text = if (isFiltered) strings.emptyFilterBody else strings.emptyVaultBody,
+                text = if (isFiltered) strings.emptyFilterBody else strings.emptyHistoryBody,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center

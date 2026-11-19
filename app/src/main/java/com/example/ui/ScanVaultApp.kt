@@ -53,6 +53,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.domain.parser.OfflineBarcodeParser
+import com.example.ui.components.MultiScanResultsSheet
 import com.example.ui.components.ScanResultInspector
 import com.example.ui.i18n.BanglaStrings
 import com.example.ui.i18n.EnglishStrings
@@ -64,7 +65,7 @@ import com.example.ui.theme.ScanVaultTheme
 import kotlinx.coroutines.launch
 
 const val ROUTE_SCAN = "scan"
-const val ROUTE_VAULT = "vault"
+const val ROUTE_HISTORY = "history"
 const val ROUTE_GENERATE = "generate"
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -84,6 +85,8 @@ fun ScanVaultApp(
     val selectedFilter by viewModel.selectedFilter.collectAsStateWithLifecycle()
     val selectedHistoryId by viewModel.selectedHistoryId.collectAsStateWithLifecycle()
     val activeScanSheet by viewModel.activeScanSheet.collectAsStateWithLifecycle()
+    val multiScanBatch by viewModel.multiScanBatch.collectAsStateWithLifecycle()
+    val isMultiScanSheetOpen by viewModel.isMultiScanSheetOpen.collectAsStateWithLifecycle()
     val isScanningPaused by viewModel.isScanningPaused.collectAsStateWithLifecycle()
     val isDecodingImage by viewModel.isDecodingImage.collectAsStateWithLifecycle()
     val preferences by viewModel.preferences.collectAsStateWithLifecycle()
@@ -105,6 +108,22 @@ fun ScanVaultApp(
                 }
             }
 
+            val copyAllMultiScan: () -> Unit = remember(context, appStrings, multiScanBatch) {
+                {
+                    if (multiScanBatch.isNotEmpty()) {
+                        val combined = multiScanBatch.joinToString(separator = "\n") {
+                            it.parsed.primaryCopyValue
+                        }
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Naim QR Multi", combined))
+                        scope.launch {
+                            snackbarHostState.currentSnackbarData?.dismiss()
+                            snackbarHostState.showSnackbar(appStrings.multiScanCopiedAllMsg(multiScanBatch.size))
+                        }
+                    }
+                }
+            }
+
             LaunchedEffect(viewModel) {
                 viewModel.events.collect { event ->
                     when (event) {
@@ -114,7 +133,7 @@ fun ScanVaultApp(
                         }
                         is UiEvent.AutoCopyPayload -> {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Naim QR", event.text))
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Naim", event.text))
                             snackbarHostState.currentSnackbarData?.dismiss()
                             snackbarHostState.showSnackbar(appStrings.actionCopied)
                         }
@@ -165,8 +184,8 @@ fun ScanVaultApp(
                                     modifier = Modifier.testTag("nav_tab_scan")
                                 )
                                 NavigationBarItem(
-                                    selected = currentRoute == ROUTE_VAULT,
-                                    onClick = { navigateToTab(ROUTE_VAULT) },
+                                    selected = currentRoute == ROUTE_HISTORY,
+                                    onClick = { navigateToTab(ROUTE_HISTORY) },
                                     icon = {
                                         BadgedBox(
                                             badge = {
@@ -180,17 +199,17 @@ fun ScanVaultApp(
                                             }
                                         ) {
                                             Icon(
-                                                imageVector = if (currentRoute == ROUTE_VAULT) {
+                                                imageVector = if (currentRoute == ROUTE_HISTORY) {
                                                     Icons.Rounded.History
                                                 } else {
                                                     Icons.Outlined.History
                                                 },
-                                                contentDescription = appStrings.tabVault
+                                                contentDescription = appStrings.tabHistory
                                             )
                                         }
                                     },
-                                    label = { Text(appStrings.tabVault) },
-                                    modifier = Modifier.testTag("nav_tab_vault")
+                                    label = { Text(appStrings.tabHistory) },
+                                    modifier = Modifier.testTag("nav_tab_history")
                                 )
                                 NavigationBarItem(
                                     selected = currentRoute == ROUTE_GENERATE,
@@ -238,8 +257,8 @@ fun ScanVaultApp(
                                     modifier = Modifier.testTag("nav_rail_scan")
                                 )
                                 NavigationRailItem(
-                                    selected = currentRoute == ROUTE_VAULT,
-                                    onClick = { navigateToTab(ROUTE_VAULT) },
+                                    selected = currentRoute == ROUTE_HISTORY,
+                                    onClick = { navigateToTab(ROUTE_HISTORY) },
                                     icon = {
                                         BadgedBox(
                                             badge = {
@@ -253,17 +272,17 @@ fun ScanVaultApp(
                                             }
                                         ) {
                                             Icon(
-                                                imageVector = if (currentRoute == ROUTE_VAULT) {
+                                                imageVector = if (currentRoute == ROUTE_HISTORY) {
                                                     Icons.Rounded.History
                                                 } else {
                                                     Icons.Outlined.History
                                                 },
-                                                contentDescription = appStrings.tabVault
+                                                contentDescription = appStrings.tabHistory
                                             )
                                         }
                                     },
-                                    label = { Text(appStrings.tabVault) },
-                                    modifier = Modifier.testTag("nav_rail_vault")
+                                    label = { Text(appStrings.tabHistory) },
+                                    modifier = Modifier.testTag("nav_rail_history")
                                 )
                                 NavigationRailItem(
                                     selected = currentRoute == ROUTE_GENERATE,
@@ -294,8 +313,12 @@ fun ScanVaultApp(
                                     isScanningPaused = isScanningPaused,
                                     isDecodingImage = isDecodingImage,
                                     preferences = preferences,
-                                    onBarcodeDetected = viewModel::onLiveBarcodeDetected,
+                                    multiScanBatch = multiScanBatch,
+                                    onBarcodesDetected = viewModel::onLiveBarcodesDetected,
                                     onImageSelected = viewModel::decodeImageFromGallery,
+                                    onOpenMultiScanSheet = viewModel::openMultiScanSheet,
+                                    onCopyAllMultiScan = copyAllMultiScan,
+                                    onClearMultiScanBatch = viewModel::clearMultiScanBatch,
                                     onToggleAutoCopy = viewModel::setAutoCopy,
                                     onToggleHaptic = viewModel::setHapticFeedback,
                                     onToggleContinuous = viewModel::setContinuousMode,
@@ -304,7 +327,7 @@ fun ScanVaultApp(
                                 )
                             }
 
-                            composable(ROUTE_VAULT) {
+                            composable(ROUTE_HISTORY) {
                                 HistoryScreen(
                                     scans = filteredHistory,
                                     totalCount = allHistory.size,
@@ -347,6 +370,23 @@ fun ScanVaultApp(
                             }
                         }
                     }
+                }
+            }
+
+            if (isMultiScanSheetOpen && multiScanBatch.isNotEmpty()) {
+                BackHandler { viewModel.dismissMultiScanSheet() }
+                ModalBottomSheet(onDismissRequest = viewModel::dismissMultiScanSheet) {
+                    MultiScanResultsSheet(
+                        items = multiScanBatch,
+                        onCopyAll = copyAllMultiScan,
+                        onCopySingle = { item ->
+                            copyToClipboard(item.parsed.title, item.parsed.primaryCopyValue)
+                        },
+                        onInspectItem = viewModel::inspectMultiScanItem,
+                        onRemoveItem = viewModel::removeMultiScanItem,
+                        onClearBatch = viewModel::clearMultiScanBatch,
+                        onResumeScan = viewModel::dismissMultiScanSheet
+                    )
                 }
             }
 

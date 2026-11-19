@@ -423,7 +423,7 @@ fun ScanResultInspector(
                     )
                     TechParamTile(
                         label = strings.techDataSize,
-                        value = "${parsed.dataSizeBytes} B (${parsed.rawValue.length} ch)",
+                        value = "${parsed.dataSizeBytes} B",
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -604,7 +604,9 @@ private fun TechParamTile(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         Text(
             text = value,
@@ -612,7 +614,7 @@ private fun TechParamTile(
             fontFamily = JetBrainsMonoFontFamily,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
     }

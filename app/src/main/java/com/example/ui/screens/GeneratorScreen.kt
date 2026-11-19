@@ -212,18 +212,12 @@ fun GeneratorScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = strings.generatorTitle,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = strings.generatorSubtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(
+                text = strings.generatorTitle,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
             ThemeAndLanguageActions(
                 isDarkTheme = isDarkTheme,
                 onToggleTheme = onToggleTheme,
@@ -284,7 +278,7 @@ fun GeneratorScreen(
                                     urlInput = "https://${urlInput.removePrefix("http://")}"
                                 }
                             }) { Text("https://") }
-                            TextButton(onClick = { urlInput = "https://" }) { Text("Clear") }
+                            TextButton(onClick = { urlInput = "https://" }) { Text(strings.clearLabel) }
                         }
                     }
 
@@ -494,14 +488,18 @@ fun GeneratorScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(strings.paletteTitle, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     listOf(
                         CodePalette.NEON_MINT to strings.paletteNeonMint,
                         CodePalette.CYAN to strings.paletteCyan,
                         CodePalette.CLASSIC_WHITE to strings.paletteClassicWhite
                     ).forEach { (palette, label) ->
+                        val selected = selectedPalette == palette
                         FilterChip(
-                            selected = selectedPalette == palette,
+                            selected = selected,
                             onClick = { selectedPalette = palette },
                             leadingIcon = {
                                 Box(
@@ -512,7 +510,7 @@ fun GeneratorScreen(
                                         .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
                                 )
                             },
-                            label = { Text(label) },
+                            label = { Text(label, maxLines = 1, softWrap = false) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
                             )
@@ -521,12 +519,17 @@ fun GeneratorScreen(
                 }
 
                 Text(strings.sizeTitle, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     CodeSize.entries.forEach { size ->
-                        FilterChip(
+                        GeneratorOptionPill(
+                            text = "${size.px}px",
                             selected = selectedSize == size,
                             onClick = { selectedSize = size },
-                            label = { Text("${size.px}px", fontFamily = JetBrainsMonoFontFamily) }
+                            useMono = true,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
@@ -539,12 +542,23 @@ fun GeneratorScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         QrEcLevel.entries.forEach { ec ->
-                            FilterChip(
+                            val label = when (ec) {
+                                QrEcLevel.L -> "L 7%"
+                                QrEcLevel.M -> "M 15%"
+                                QrEcLevel.Q -> "Q 25%"
+                                QrEcLevel.H -> "H 30%"
+                            }
+                            GeneratorOptionPill(
+                                text = label,
                                 selected = selectedEcLevel == ec,
                                 onClick = { selectedEcLevel = ec },
-                                label = { Text(ec.description) }
+                                useMono = false,
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }
@@ -671,5 +685,54 @@ fun GeneratorScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun GeneratorOptionPill(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    useMono: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        modifier = modifier
+            .minimumInteractiveComponentSize()
+            .border(
+                width = 1.dp,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant
+                },
+                shape = RoundedCornerShape(12.dp)
+            )
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp)
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = if (useMono) JetBrainsMonoFontFamily else MaterialTheme.typography.labelMedium.fontFamily,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                maxLines = 1,
+                softWrap = false
+            )
+        }
     }
 }

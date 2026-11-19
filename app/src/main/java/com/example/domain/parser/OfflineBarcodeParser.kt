@@ -29,15 +29,15 @@ object OfflineBarcodeParser {
     }
 
     fun defaultErrorCorrectionFor(formatCode: Int): String = when (formatCode) {
-        Barcode.FORMAT_QR_CODE -> "Reed-Solomon (Auto)"
-        Barcode.FORMAT_DATA_MATRIX -> "ECC 200 (Reed-Solomon)"
-        Barcode.FORMAT_AZTEC -> "Reed-Solomon (23% default)"
-        Barcode.FORMAT_PDF417 -> "Reed-Solomon (0–8)"
+        Barcode.FORMAT_QR_CODE -> "Auto (RS)"
+        Barcode.FORMAT_DATA_MATRIX -> "ECC 200"
+        Barcode.FORMAT_AZTEC -> "RS 23%"
+        Barcode.FORMAT_PDF417 -> "RS 0–8"
         Barcode.FORMAT_EAN_13, Barcode.FORMAT_EAN_8,
-        Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E -> "Mod-10 Check Digit"
-        Barcode.FORMAT_CODE_128 -> "Mod-103 Checksum"
-        Barcode.FORMAT_CODE_39, Barcode.FORMAT_CODE_93 -> "Mod-43 / Dual Check"
-        else -> "Symbology Check"
+        Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E -> "Mod-10"
+        Barcode.FORMAT_CODE_128 -> "Mod-103"
+        Barcode.FORMAT_CODE_39, Barcode.FORMAT_CODE_93 -> "Mod-43"
+        else -> "Auto"
     }
 
     fun isProductBarcodeFormat(formatCode: Int): Boolean = when (formatCode) {

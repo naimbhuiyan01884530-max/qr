@@ -18,6 +18,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Cameraswitch
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DynamicFeed
 import androidx.compose.material.icons.rounded.FlashlightOff
 import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.PhotoLibrary
@@ -49,6 +53,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -73,12 +78,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.data.local.ScannerPreferences
 import com.example.scanner.OfflineBarcodeDecoder
+import com.example.ui.ActiveScanSheet
+import com.example.ui.DetectedBarcodeItem
 import com.example.ui.components.BrandHeaderChip
 import com.example.ui.components.ScannerReticleOverlay
 import com.example.ui.components.ThemeAndLanguageActions
@@ -90,8 +98,12 @@ fun ScannerScreen(
     isScanningPaused: Boolean,
     isDecodingImage: Boolean,
     preferences: ScannerPreferences,
-    onBarcodeDetected: (rawValue: String, formatCode: Int, processingTimeMs: Long) -> Unit,
+    multiScanBatch: List<ActiveScanSheet>,
+    onBarcodesDetected: (List<DetectedBarcodeItem>) -> Unit,
     onImageSelected: (Uri) -> Unit,
+    onOpenMultiScanSheet: () -> Unit,
+    onCopyAllMultiScan: () -> Unit,
+    onClearMultiScanBatch: () -> Unit,
     onToggleAutoCopy: (Boolean) -> Unit,
     onToggleHaptic: (Boolean) -> Unit,
     onToggleContinuous: (Boolean) -> Unit,
@@ -145,7 +157,7 @@ fun ScannerScreen(
                 isTorchEnabled = isTorchEnabled,
                 zoomRatio = zoomRatio,
                 isScanningPaused = isScanningPaused,
-                onBarcodeDetected = onBarcodeDetected,
+                onBarcodesDetected = onBarcodesDetected,
                 onCameraError = { msg -> cameraError = msg },
                 modifier = Modifier.fillMaxSize()
             )
@@ -169,7 +181,7 @@ fun ScannerScreen(
             )
         }
 
-        // Top Floating Studio HUD with Brand, Theme/Lang Toggle, and Settings
+        // Top Floating Studio HUD with compact "Naim" brand, Theme/Lang Toggle, and Settings
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -179,16 +191,9 @@ fun ScannerScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             BrandHeaderChip(
-                badgeText = if (preferences.continuousMode) {
-                    "${strings.appName} • ${strings.offlineBadgeContinuous}"
-                } else {
-                    "${strings.appName} • ${strings.offlineBadgeAll}"
-                },
-                overCamera = true,
-                modifier = Modifier.weight(1f, fill = false)
+                badgeText = strings.brandShort,
+                overCamera = true
             )
-
-            Spacer(modifier = Modifier.width(8.dp))
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -224,22 +229,86 @@ fun ScannerScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 20.dp),
+                .padding(horizontal = 16.dp, vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            if (hasCameraPermission && cameraError == null) {
-                Text(
-                    text = strings.scanHint,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.88f),
-                    textAlign = TextAlign.Center,
+            // Live Multi-QR Batch Tray when scanning multiple QR codes
+            AnimatedVisibility(visible = multiScanBatch.isNotEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xFF0C121B).copy(alpha = 0.90f),
                     modifier = Modifier
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.45f))
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
-                )
+                        .widthIn(max = 460.dp)
+                        .fillMaxWidth()
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable { onOpenMultiScanSheet() }
+                        .testTag("multi_scan_tray")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = strings.multiScanCount(multiScanBatch.size),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = multiScanBatch.first().parsed.title,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.88f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
 
+                        FilledTonalButton(
+                            onClick = onCopyAllMultiScan,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.minimumInteractiveComponentSize()
+                        ) {
+                            Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(strings.multiScanCopyAll, style = MaterialTheme.typography.labelMedium)
+                        }
+
+                        FilledTonalButton(
+                            onClick = onOpenMultiScanSheet,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("multi_scan_view_all_button")
+                        ) {
+                            Text(strings.multiScanViewAll, style = MaterialTheme.typography.labelMedium)
+                        }
+
+                        IconButton(
+                            onClick = onClearMultiScanBatch,
+                            modifier = Modifier.minimumInteractiveComponentSize()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = strings.multiScanClear,
+                                tint = Color.White.copy(alpha = 0.78f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Zoom + Multi-QR Quick Toggle Row
+            if (hasCameraPermission && cameraError == null) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -258,14 +327,60 @@ fun ScannerScreen(
                         ) {
                             Box(
                                 contentAlignment = Alignment.Center,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                                modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp)
                             ) {
                                 Text(
                                     text = label,
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = if (selected) MaterialTheme.colorScheme.onPrimary else Color.White
+                                    color = if (selected) MaterialTheme.colorScheme.onPrimary else Color.White,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
+                        }
+                    }
+
+                    // Direct Multi-QR Toggle Chip
+                    Surface(
+                        onClick = { onToggleContinuous(!preferences.continuousMode) },
+                        shape = CircleShape,
+                        color = if (preferences.continuousMode) {
+                            MaterialTheme.colorScheme.secondary
+                        } else {
+                            Color(0xFF0C121B).copy(alpha = 0.72f)
+                        },
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .border(
+                                width = 1.dp,
+                                color = if (preferences.continuousMode) {
+                                    MaterialTheme.colorScheme.secondary
+                                } else {
+                                    Color.White.copy(alpha = 0.20f)
+                                },
+                                shape = CircleShape
+                            )
+                            .testTag("multi_qr_toggle_chip")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.DynamicFeed,
+                                contentDescription = null,
+                                tint = if (preferences.continuousMode) MaterialTheme.colorScheme.onSecondary else Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = strings.multiScanToggle,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (preferences.continuousMode) MaterialTheme.colorScheme.onSecondary else Color.White,
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
                     }
                 }
@@ -403,7 +518,7 @@ private fun CameraPreviewWithMlKit(
     isTorchEnabled: Boolean,
     zoomRatio: Float,
     isScanningPaused: Boolean,
-    onBarcodeDetected: (String, Int, Long) -> Unit,
+    onBarcodesDetected: (List<DetectedBarcodeItem>) -> Unit,
     onCameraError: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -446,14 +561,19 @@ private fun CameraPreviewWithMlKit(
         ) { result ->
             if (isScanningPaused) return@MlKitAnalyzer
             val barcodes = result?.getValue(barcodeScanner).orEmpty()
-            val firstMatch = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() || !it.displayValue.isNullOrBlank() }
-            if (firstMatch != null) {
-                val payload = firstMatch.rawValue ?: firstMatch.displayValue.orEmpty()
-                if (payload.isNotBlank()) {
-                    val elapsedMs = ((System.currentTimeMillis() - (result?.timestamp ?: System.currentTimeMillis())))
-                        .coerceIn(2L, 80L)
-                    onBarcodeDetected(payload, firstMatch.format, elapsedMs)
-                }
+            val elapsedMs = ((System.currentTimeMillis() - (result?.timestamp ?: System.currentTimeMillis())))
+                .coerceIn(2L, 80L)
+            val detected = barcodes.mapNotNull { barcode ->
+                val payload = barcode.rawValue ?: barcode.displayValue.orEmpty()
+                if (payload.isBlank()) null
+                else DetectedBarcodeItem(
+                    rawValue = payload,
+                    formatCode = barcode.format,
+                    processingTimeMs = elapsedMs
+                )
+            }
+            if (detected.isNotEmpty()) {
+                onBarcodesDetected(detected)
             }
         }
         cameraController.setImageAnalysisAnalyzer(mainExecutor, analyzer)
@@ -525,7 +645,7 @@ private fun CameraUnavailableFallback(
                 }
 
                 Text(
-                    text = if (permissionDenied) strings.cameraPermissionTitle else "Camera Unavailable",
+                    text = if (permissionDenied) strings.cameraPermissionTitle else strings.cameraUnavailable,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
@@ -582,19 +702,21 @@ private fun ScannerSettingsSheetContent(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text(
             text = strings.scannerSettingsTitle,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
-        Text(
-            text = strings.scannerSettingsSubtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
 
+        PreferenceToggleRow(
+            title = strings.multiScanSettingTitle,
+            subtitle = strings.multiScanSettingSubtitle,
+            checked = preferences.continuousMode,
+            onCheckedChange = onToggleContinuous,
+            tag = "setting_continuous"
+        )
         PreferenceToggleRow(
             title = strings.autoCopyTitle,
             subtitle = strings.autoCopySubtitle,
@@ -608,13 +730,6 @@ private fun ScannerSettingsSheetContent(
             checked = preferences.hapticFeedback,
             onCheckedChange = onToggleHaptic,
             tag = "setting_haptic"
-        )
-        PreferenceToggleRow(
-            title = strings.continuousTitle,
-            subtitle = strings.continuousSubtitle,
-            checked = preferences.continuousMode,
-            onCheckedChange = onToggleContinuous,
-            tag = "setting_continuous"
         )
 
         Spacer(modifier = Modifier.height(16.dp))

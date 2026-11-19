@@ -3,10 +3,7 @@ package com.example.generator
 import android.graphics.Bitmap
 import android.graphics.Color
 import com.google.zxing.BarcodeFormat
-import com.google.zxing.EncodeHintType
 import com.google.zxing.common.BitMatrix
-import com.google.zxing.oned.Code128Writer
-import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 
 enum class GeneratorType {
@@ -46,7 +43,13 @@ enum class CodePalette(
 enum class CodeSize(val px: Int) {
     PX_512(512),
     PX_1024(1024),
-    PX_2048(2048)
+    PX_2048(2048);
+
+    fun dimensionsLabel(isCode128: Boolean): String = if (isCode128) {
+        "${px}×${ZxingBarcodeGeneratorService.code128HeightForWidth(px)}px"
+    } else {
+        "${px}×${px}px"
+    }
 }
 
 enum class QrEcLevel(
@@ -61,6 +64,8 @@ enum class QrEcLevel(
 }
 
 object OfflineCodeGenerator {
+
+    private val defaultService: BarcodeGeneratorService = ZxingBarcodeGeneratorService()
 
     fun buildWifiPayload(ssid: String, password: String, security: String, hidden: Boolean): String {
         if (ssid.isBlank()) return ""
@@ -111,20 +116,13 @@ object OfflineCodeGenerator {
         widthPx: Int,
         heightPx: Int,
         ecLevel: QrEcLevel = QrEcLevel.M
-    ): BitMatrix {
-        val trimmed = payload.trim()
-        require(trimmed.isNotEmpty()) { "Payload cannot be empty" }
-        return if (isCode128) {
-            Code128Writer().encode(trimmed, BarcodeFormat.CODE_128, widthPx, heightPx)
-        } else {
-            val hints = mapOf(
-                EncodeHintType.ERROR_CORRECTION to ecLevel.zxingLevel,
-                EncodeHintType.CHARACTER_SET to "UTF-8",
-                EncodeHintType.MARGIN to 2
-            )
-            QRCodeWriter().encode(trimmed, BarcodeFormat.QR_CODE, widthPx, heightPx, hints)
-        }
-    }
+    ): BitMatrix = defaultService.encodeMatrix(
+        payload = payload,
+        format = if (isCode128) BarcodeFormat.CODE_128 else BarcodeFormat.QR_CODE,
+        widthPx = widthPx,
+        heightPx = heightPx,
+        ecLevel = ecLevel
+    )
 
     fun generateBitmap(
         payload: String,
@@ -132,23 +130,13 @@ object OfflineCodeGenerator {
         sizePx: Int,
         palette: CodePalette,
         ecLevel: QrEcLevel = QrEcLevel.M
-    ): Bitmap {
-        val width = sizePx
-        val height = if (isCode128) (sizePx * 0.44f).toInt().coerceAtLeast(180) else sizePx
-        val matrix = encodeMatrix(payload, isCode128, width, height, ecLevel)
-        val pixels = IntArray(width * height)
-        val fg = palette.fgColor
-        val bg = palette.bgColor
-        for (y in 0 until height) {
-            val rowOffset = y * width
-            for (x in 0 until width) {
-                pixels[rowOffset + x] = if (matrix[x, y]) fg else bg
-            }
-        }
-        return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
-            setPixels(pixels, 0, width, 0, 0, width, height)
-        }
-    }
+    ): Bitmap = defaultService.generateBitmap(
+        payload = payload,
+        format = if (isCode128) BarcodeFormat.CODE_128 else BarcodeFormat.QR_CODE,
+        sizePx = sizePx,
+        palette = palette,
+        ecLevel = ecLevel
+    )
 
     fun generateSvg(
         payload: String,
@@ -156,62 +144,13 @@ object OfflineCodeGenerator {
         exportSizePx: Int,
         palette: CodePalette,
         ecLevel: QrEcLevel = QrEcLevel.M
-    ): String {
-        // Encode minimal natural module matrix for crisp, compact vector SVG
-        val matrix = if (isCode128) {
-            Code128Writer().encode(payload.trim(), BarcodeFormat.CODE_128, 1, 1)
-        } else {
-            val hints = mapOf(
-                EncodeHintType.ERROR_CORRECTION to ecLevel.zxingLevel,
-                EncodeHintType.CHARACTER_SET to "UTF-8",
-                EncodeHintType.MARGIN to 2
-            )
-            QRCodeWriter().encode(payload.trim(), BarcodeFormat.QR_CODE, 0, 0, hints)
-        }
-
-        val mw = matrix.width
-        val mh = if (isCode128) (mw * 0.44f).toInt().coerceAtLeast(40) else matrix.height
-        val outWidth = exportSizePx
-        val outHeight = if (isCode128) (exportSizePx * 0.44f).toInt() else exportSizePx
-
-        val pathData = StringBuilder()
-        if (isCode128) {
-            // Merge vertical bars cleanly
-            var x = 0
-            while (x < mw) {
-                if (matrix[x, 0]) {
-                    var run = 1
-                    while (x + run < mw && matrix[x + run, 0]) run++
-                    pathData.append("M${x},4h${run}v${mh - 8}h-${run}z")
-                    x += run
-                } else {
-                    x++
-                }
-            }
-        } else {
-            for (y in 0 until mh) {
-                var x = 0
-                while (x < mw) {
-                    if (matrix[x, y]) {
-                        var run = 1
-                        while (x + run < mw && matrix[x + run, y]) run++
-                        pathData.append("M${x},${y}h${run}v1h-${run}z")
-                        x += run
-                    } else {
-                        x++
-                    }
-                }
-            }
-        }
-
-        return """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <svg xmlns="http://www.w3.org/2000/svg" width="$outWidth" height="$outHeight" viewBox="0 0 $mw $mh" shape-rendering="crispEdges">
-              <rect width="100%" height="100%" fill="${palette.bgHex}"/>
-              <path d="$pathData" fill="${palette.fgHex}"/>
-            </svg>
-        """.trimIndent()
-    }
+    ): String = defaultService.generateSvg(
+        payload = payload,
+        format = if (isCode128) BarcodeFormat.CODE_128 else BarcodeFormat.QR_CODE,
+        exportSizePx = exportSizePx,
+        palette = palette,
+        ecLevel = ecLevel
+    )
 
     private fun escapeWifi(value: String): String {
         return value
