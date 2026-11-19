@@ -43,7 +43,6 @@ import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -63,7 +62,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -73,17 +71,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.example.R
 import com.example.data.local.ScannerPreferences
 import com.example.scanner.OfflineBarcodeDecoder
+import com.example.ui.components.BrandHeaderChip
 import com.example.ui.components.ScannerReticleOverlay
+import com.example.ui.components.ThemeAndLanguageActions
+import com.example.ui.i18n.LocalAppStrings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,14 +90,17 @@ fun ScannerScreen(
     isScanningPaused: Boolean,
     isDecodingImage: Boolean,
     preferences: ScannerPreferences,
-    onBarcodeDetected: (rawValue: String, formatCode: Int) -> Unit,
+    onBarcodeDetected: (rawValue: String, formatCode: Int, processingTimeMs: Long) -> Unit,
     onImageSelected: (Uri) -> Unit,
     onToggleAutoCopy: (Boolean) -> Unit,
     onToggleHaptic: (Boolean) -> Unit,
     onToggleContinuous: (Boolean) -> Unit,
+    onToggleTheme: () -> Unit,
+    onToggleLanguage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val strings = LocalAppStrings.current
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
@@ -167,63 +169,53 @@ fun ScannerScreen(
             )
         }
 
-        // Top Floating Studio HUD
+        // Top Floating Studio HUD with Brand, Theme/Lang Toggle, and Settings
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                shape = CircleShape,
-                color = Color(0xFF0C121B).copy(alpha = 0.78f),
-                modifier = Modifier.border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                    shape = CircleShape
-                )
+            BrandHeaderChip(
+                badgeText = if (preferences.continuousMode) {
+                    "${strings.appName} • ${strings.offlineBadgeContinuous}"
+                } else {
+                    "${strings.appName} • ${strings.offlineBadgeAll}"
+                },
+                overCamera = true,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ThemeAndLanguageActions(
+                    isDarkTheme = preferences.isDarkTheme,
+                    onToggleTheme = onToggleTheme,
+                    onToggleLanguage = onToggleLanguage,
+                    overCamera = true
+                )
+
+                FilledTonalIconButton(
+                    onClick = { showSettingsSheet = true },
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = Color(0xFF0C121B).copy(alpha = 0.80f),
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .testTag("scanner_settings_button")
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.secondary)
-                    )
                     Icon(
-                        imageVector = Icons.Rounded.Shield,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = if (preferences.continuousMode) "OFFLINE • CONTINUOUS" else "OFFLINE • ALL FORMATS",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White
+                        imageVector = Icons.Rounded.Settings,
+                        contentDescription = strings.scannerSettingsTitle
                     )
                 }
-            }
-
-            FilledTonalIconButton(
-                onClick = { showSettingsSheet = true },
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = Color(0xFF0C121B).copy(alpha = 0.78f),
-                    contentColor = Color.White
-                ),
-                modifier = Modifier
-                    .minimumInteractiveComponentSize()
-                    .testTag("scanner_settings_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Settings,
-                    contentDescription = "Scanner settings"
-                )
             }
         }
 
@@ -238,7 +230,7 @@ fun ScannerScreen(
         ) {
             if (hasCameraPermission && cameraError == null) {
                 Text(
-                    text = stringResource(R.string.scan_hint),
+                    text = strings.scanHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.88f),
                     textAlign = TextAlign.Center,
@@ -248,7 +240,6 @@ fun ScannerScreen(
                         .padding(horizontal = 14.dp, vertical = 6.dp)
                 )
 
-                // Quick zoom selector pills
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -280,7 +271,6 @@ fun ScannerScreen(
                 }
             }
 
-            // Primary Action Dock: Torch | Import Image | Flip Camera
             Surface(
                 shape = RoundedCornerShape(28.dp),
                 color = Color(0xFF0E141E).copy(alpha = 0.88f),
@@ -320,7 +310,7 @@ fun ScannerScreen(
                     ) {
                         Icon(
                             imageVector = if (isTorchEnabled) Icons.Rounded.FlashlightOn else Icons.Rounded.FlashlightOff,
-                            contentDescription = stringResource(R.string.torch_toggle)
+                            contentDescription = strings.torchToggle
                         )
                     }
 
@@ -341,7 +331,7 @@ fun ScannerScreen(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.scan_from_image))
+                        Text(strings.importImage)
                     }
 
                     FilledTonalIconButton(
@@ -360,14 +350,13 @@ fun ScannerScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Cameraswitch,
-                            contentDescription = stringResource(R.string.camera_flip)
+                            contentDescription = strings.flipCamera
                         )
                     }
                 }
             }
         }
 
-        // Loading overlay while decoding an imported photo
         AnimatedVisibility(
             visible = isDecodingImage,
             enter = fadeIn(),
@@ -386,7 +375,7 @@ fun ScannerScreen(
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
                     Text(
-                        text = "Decoding image offline…",
+                        text = strings.decodingImage,
                         style = MaterialTheme.typography.titleSmall
                     )
                 }
@@ -396,9 +385,7 @@ fun ScannerScreen(
 
     if (showSettingsSheet) {
         BackHandler { showSettingsSheet = false }
-        ModalBottomSheet(
-            onDismissRequest = { showSettingsSheet = false }
-        ) {
+        ModalBottomSheet(onDismissRequest = { showSettingsSheet = false }) {
             ScannerSettingsSheetContent(
                 preferences = preferences,
                 onToggleAutoCopy = onToggleAutoCopy,
@@ -409,13 +396,14 @@ fun ScannerScreen(
     }
 }
 
+@Suppress("DEPRECATION")
 @Composable
 private fun CameraPreviewWithMlKit(
     useFrontCamera: Boolean,
     isTorchEnabled: Boolean,
     zoomRatio: Float,
     isScanningPaused: Boolean,
-    onBarcodeDetected: (String, Int) -> Unit,
+    onBarcodeDetected: (String, Int, Long) -> Unit,
     onCameraError: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -462,7 +450,9 @@ private fun CameraPreviewWithMlKit(
             if (firstMatch != null) {
                 val payload = firstMatch.rawValue ?: firstMatch.displayValue.orEmpty()
                 if (payload.isNotBlank()) {
-                    onBarcodeDetected(payload, firstMatch.format)
+                    val elapsedMs = ((System.currentTimeMillis() - (result?.timestamp ?: System.currentTimeMillis())))
+                        .coerceIn(2L, 80L)
+                    onBarcodeDetected(payload, firstMatch.format, elapsedMs)
                 }
             }
         }
@@ -470,7 +460,7 @@ private fun CameraPreviewWithMlKit(
         runCatching {
             cameraController.bindToLifecycle(lifecycleOwner)
         }.onFailure { err ->
-            Log.e("ScanVaultCamera", "Camera bind failed", err)
+            Log.e("NaimQrCamera", "Camera bind failed", err)
             onCameraError("Camera preview could not be started on this device.")
         }
 
@@ -503,6 +493,7 @@ private fun CameraUnavailableFallback(
     onImportImage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
     Box(
         modifier = modifier,
         contentAlignment = Alignment.Center
@@ -534,18 +525,14 @@ private fun CameraUnavailableFallback(
                 }
 
                 Text(
-                    text = if (permissionDenied) {
-                        stringResource(R.string.camera_permission_title)
-                    } else {
-                        "Camera Preview Unavailable"
-                    },
+                    text = if (permissionDenied) strings.cameraPermissionTitle else "Camera Unavailable",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
 
                 Text(
-                    text = errorMessage ?: stringResource(R.string.camera_permission_body),
+                    text = errorMessage ?: strings.cameraPermissionBody,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -559,7 +546,7 @@ private fun CameraUnavailableFallback(
                             .minimumInteractiveComponentSize()
                             .testTag("grant_camera_button")
                     ) {
-                        Text(stringResource(R.string.grant_camera_permission))
+                        Text(strings.enableCamera)
                     }
                 }
 
@@ -576,7 +563,7 @@ private fun CameraUnavailableFallback(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Scan from Photo Library")
+                    Text(strings.scanFromGallery)
                 }
             }
         }
@@ -590,6 +577,7 @@ private fun ScannerSettingsSheetContent(
     onToggleHaptic: (Boolean) -> Unit,
     onToggleContinuous: (Boolean) -> Unit
 ) {
+    val strings = LocalAppStrings.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -597,33 +585,33 @@ private fun ScannerSettingsSheetContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = "Offline Scanner Preferences",
+            text = strings.scannerSettingsTitle,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
         Text(
-            text = "All decoding and history storage run locally on this device with zero network access.",
+            text = strings.scannerSettingsSubtitle,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         PreferenceToggleRow(
-            title = "Auto-copy on scan",
-            subtitle = "Immediately copy the primary result (link, password, or code) to clipboard",
+            title = strings.autoCopyTitle,
+            subtitle = strings.autoCopySubtitle,
             checked = preferences.autoCopyOnScan,
             onCheckedChange = onToggleAutoCopy,
             tag = "setting_auto_copy"
         )
         PreferenceToggleRow(
-            title = "Haptic confirmation",
-            subtitle = "Vibrate briefly when a QR code or barcode is recognized",
+            title = strings.hapticTitle,
+            subtitle = strings.hapticSubtitle,
             checked = preferences.hapticFeedback,
             onCheckedChange = onToggleHaptic,
             tag = "setting_haptic"
         )
         PreferenceToggleRow(
-            title = "Continuous batch scan",
-            subtitle = "Keep scanning without pausing; saves every new code straight to history",
+            title = strings.continuousTitle,
+            subtitle = strings.continuousSubtitle,
             checked = preferences.continuousMode,
             onCheckedChange = onToggleContinuous,
             tag = "setting_continuous"

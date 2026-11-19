@@ -1,16 +1,15 @@
-# ScanVault
+# Naim QR
 
-A 100% offline Android QR code and barcode scanner built with Kotlin, Jetpack Compose, CameraX, on-device ML Kit Barcode Scanning, and Room local storage.
+A 100% offline Android QR & Barcode studio built with Kotlin, Jetpack Compose, CameraX, on-device ML Kit Barcode Scanning, ZXing Core, and Room SQLite.
 
 ## Features
-- **Purely Offline**: Zero AI APIs, zero cloud services, zero network permissions required.
-- **All Standard Formats**: QR Code, Data Matrix, Aztec, PDF417, EAN-13, EAN-8, UPC-A, UPC-E, Code 128, Code 39, Code 93, Codabar, and ITF.
-- **Smart Local Parsing**: Automatically extracts URLs, Wi-Fi credentials (`WIFI:`), 2FA/OTP accounts (`otpauth://`), contacts (vCard / MeCard), email/phone/SMS/geo intents, product barcodes, and plain text.
-- **Camera & Photo Picker**: Real-time CameraX viewfinder with pinch/slider zoom, flashlight toggle, front/rear camera switch, and zero-permission Android Photo Picker image scanning.
-- **One-Tap Copy & Actions**: Copy full payloads or extracted fields (Wi-Fi password, 2FA secret, URL, product code) in one tap, or open links/connect/dial locally.
-- **Local Scan History**: Persisted strictly on-device in Room SQLite with instant search, category filter chips, swipe/single delete, and clear-all confirmation.
+- **Purely Offline**: Zero AI APIs, zero cloud services, zero network permissions.
+- **Instant Decode & Quick Action Sheet**: Supports URL, Wi-Fi (SSID & password), vCard contacts, phone, email, location (`geo:`), product barcodes (`EAN-13`, `UPC`, `Code-128`, etc.), 2FA/OTP, and text. Includes one-tap Copy, Open in Browser, Wi-Fi Settings, Call, Save Contact, Share, Save QR Image to Gallery, offline personal notes, and technical parameters (format, data size, error correction, offline processing ms).
+- **Offline Scan Vault**: Local Room database with search, category & bookmark filters, JSON backup, CSV export, and JSON restore.
+- **Offline QR & Code-128 Generator**: Live preview for Links, Text, Wi-Fi, vCard, and Code-128 with Neon Mint / Cyan / Classic White palettes, `512px` / `1024px` / `2048px` sizes, `L/M/Q/H` error correction, and PNG Gallery, Vector SVG, Share, Print, and Vault exports.
+- **One-Tap Dark/Light Mode & Bilingual UI (`বাং / EN`)**: Instant theme and Bangla/English switching from the top bar.
 
 ## Building an APK from GitHub on Your Phone
 1. Push this repository to GitHub.
-2. Open the **Actions** tab on GitHub (mobile browser or GitHub app) and select **Build ScanVault Android APK**.
-3. Open the latest workflow run (or tap **Run workflow**) and download the **`ScanVault-debug-apk`** artifact directly to your phone.
+2. Open the **Actions** tab on GitHub and select **Build ScanVault Android APK**.
+3. Download **`ScanVault-debug-apk`** from the workflow run artifacts directly onto your phone.

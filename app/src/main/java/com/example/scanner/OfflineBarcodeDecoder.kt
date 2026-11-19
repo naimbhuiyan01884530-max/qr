@@ -23,6 +23,7 @@ object OfflineBarcodeDecoder {
     }
 
     suspend fun decodeFromImageUri(context: Context, uri: Uri): List<ParsedBarcode> {
+        val startNs = System.nanoTime()
         val image = InputImage.fromFilePath(context, uri)
         val scanner = createAllFormatScanner()
         return try {
@@ -39,10 +40,11 @@ object OfflineBarcodeDecoder {
                         }
                     }
             }
+            val elapsedMs = ((System.nanoTime() - startNs) / 1_000_000L).coerceAtLeast(1L)
             barcodes.mapNotNull { barcode ->
                 val raw = barcode.rawValue ?: barcode.displayValue
                 if (raw.isNullOrBlank()) null
-                else OfflineBarcodeParser.parse(raw, barcode.format)
+                else OfflineBarcodeParser.parse(raw, barcode.format, processingTimeMs = elapsedMs)
             }
         } finally {
             scanner.close()

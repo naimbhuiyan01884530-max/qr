@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "ScanVault"
+rootProject.name = "Naim QR"
 
 include(":app")

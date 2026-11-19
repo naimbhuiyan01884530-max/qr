@@ -13,5 +13,9 @@ data class ScanRecordEntity(
     val title: String,
     val subtitle: String,
     val isPinned: Boolean = false,
-    val scannedAtMillis: Long = System.currentTimeMillis()
+    val scannedAtMillis: Long = System.currentTimeMillis(),
+    val note: String = "",
+    val dataSizeBytes: Int = 0,
+    val errorCorrection: String = "",
+    val processingTimeMs: Long = 0L
 )

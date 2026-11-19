@@ -3,6 +3,7 @@ package com.example.data.repository
 import com.example.data.local.ScanRecordDao
 import com.example.data.local.ScanRecordEntity
 import com.example.domain.model.ParsedBarcode
+import com.example.export.LocalExportHelper
 import kotlinx.coroutines.flow.Flow
 
 class ScanHistoryRepository(private val dao: ScanRecordDao) {
@@ -25,7 +26,10 @@ class ScanHistoryRepository(private val dao: ScanRecordDao) {
                 category = parsed.category.name,
                 title = parsed.title,
                 subtitle = parsed.subtitle,
-                scannedAtMillis = lastSavedAtMillis
+                scannedAtMillis = lastSavedAtMillis,
+                dataSizeBytes = parsed.dataSizeBytes,
+                errorCorrection = parsed.errorCorrection,
+                processingTimeMs = parsed.processingTimeMs
             )
         }
         val entity = ScanRecordEntity(
@@ -35,7 +39,10 @@ class ScanHistoryRepository(private val dao: ScanRecordDao) {
             category = parsed.category.name,
             title = parsed.title,
             subtitle = parsed.subtitle,
-            scannedAtMillis = now
+            scannedAtMillis = now,
+            dataSizeBytes = parsed.dataSizeBytes,
+            errorCorrection = parsed.errorCorrection,
+            processingTimeMs = parsed.processingTimeMs
         )
         val insertedId = dao.insertScan(entity)
         lastSavedRaw = parsed.rawValue
@@ -47,6 +54,10 @@ class ScanHistoryRepository(private val dao: ScanRecordDao) {
         dao.updatePinned(id, !currentlyPinned)
     }
 
+    suspend fun updateNote(id: Long, note: String) {
+        dao.updateNote(id, note.trim())
+    }
+
     suspend fun deleteScan(id: Long) {
         dao.deleteById(id)
     }
@@ -55,5 +66,26 @@ class ScanHistoryRepository(private val dao: ScanRecordDao) {
         lastSavedRaw = null
         lastSavedAtMillis = 0L
         dao.clearAll()
+    }
+
+    suspend fun exportJson(): String {
+        return LocalExportHelper.exportVaultToJson(dao.getAllSnapshot())
+    }
+
+    suspend fun exportCsv(): String {
+        return LocalExportHelper.exportVaultToCsv(dao.getAllSnapshot())
+    }
+
+    suspend fun restoreFromJson(jsonText: String): Int {
+        val incoming = LocalExportHelper.importVaultFromJson(jsonText)
+        if (incoming.isEmpty()) return 0
+        val existingKeys = dao.getAllSnapshot()
+            .map { "${it.rawValue}::${it.scannedAtMillis}" }
+            .toHashSet()
+        val toInsert = incoming.filter { "${it.rawValue}::${it.scannedAtMillis}" !in existingKeys }
+        if (toInsert.isNotEmpty()) {
+            dao.insertAll(toInsert)
+        }
+        return toInsert.size
     }
 }

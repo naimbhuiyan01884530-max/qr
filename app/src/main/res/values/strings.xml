@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">ScanVault</string>
+    <string name="app_name">Naim QR</string>
     <string name="tab_scan">Scan</string>
     <string name="tab_history">History</string>
     <string name="scan_hint">Align any QR code or barcode inside the reticle</string>

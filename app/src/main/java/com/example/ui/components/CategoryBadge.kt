@@ -8,10 +8,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.rounded.ContactPage
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Link
-import androidx.compose.material.icons.rounded.Notes
 import androidx.compose.material.icons.rounded.ShoppingBag
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Icon
@@ -28,6 +28,7 @@ import com.example.data.local.ScanRecordEntity
 import com.example.domain.model.ParsedBarcode
 import com.example.domain.model.ScanCategory
 import com.example.domain.parser.OfflineBarcodeParser
+import com.example.ui.i18n.NaimQrStrings
 import com.example.ui.theme.CategoryContactColor
 import com.example.ui.theme.CategoryProductColor
 import com.example.ui.theme.CategoryTextColor
@@ -41,7 +42,7 @@ fun ScanCategory.icon(): ImageVector = when (this) {
     ScanCategory.WIFI -> Icons.Rounded.Wifi
     ScanCategory.TWO_FA -> Icons.Rounded.Key
     ScanCategory.CONTACT -> Icons.Rounded.ContactPage
-    ScanCategory.TEXT -> Icons.Rounded.Notes
+    ScanCategory.TEXT -> Icons.AutoMirrored.Rounded.Notes
 }
 
 fun ScanCategory.accentColor(): Color = when (this) {
@@ -53,12 +54,26 @@ fun ScanCategory.accentColor(): Color = when (this) {
     ScanCategory.TEXT -> CategoryTextColor
 }
 
+fun ScanCategory.localizedLabel(strings: NaimQrStrings): String = when (this) {
+    ScanCategory.URL -> strings.catLinks
+    ScanCategory.PRODUCT -> strings.catBarcodes
+    ScanCategory.WIFI -> strings.catWifi
+    ScanCategory.TWO_FA -> strings.catTwoFa
+    ScanCategory.CONTACT -> strings.catContacts
+    ScanCategory.TEXT -> strings.catText
+}
+
 fun ScanRecordEntity.parsedCategory(): ScanCategory {
     return runCatching { ScanCategory.valueOf(category) }.getOrDefault(ScanCategory.TEXT)
 }
 
 fun ScanRecordEntity.toParsedBarcode(): ParsedBarcode {
-    return OfflineBarcodeParser.parse(rawValue, formatCode)
+    return OfflineBarcodeParser.parse(
+        rawValue = rawValue,
+        formatCode = formatCode,
+        processingTimeMs = processingTimeMs,
+        errorCorrectionOverride = errorCorrection.takeIf { it.isNotBlank() }
+    )
 }
 
 @Composable
@@ -76,7 +91,7 @@ fun CategoryIconBadge(
     ) {
         Icon(
             imageVector = category.icon(),
-            contentDescription = category.displayName,
+            contentDescription = category.name,
             tint = accent,
             modifier = Modifier.size(22.dp)
         )

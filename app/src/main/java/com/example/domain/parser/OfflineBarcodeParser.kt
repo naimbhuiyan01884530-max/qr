@@ -1,8 +1,10 @@
 package com.example.domain.parser
 
+import com.example.domain.model.ContactInfo
 import com.example.domain.model.ParsedBarcode
 import com.example.domain.model.ParsedField
 import com.example.domain.model.ScanCategory
+import com.example.domain.model.WifiInfo
 import com.google.mlkit.vision.barcode.common.Barcode
 import java.net.URI
 import java.net.URLDecoder
@@ -26,6 +28,18 @@ object OfflineBarcodeParser {
         else -> "Barcode"
     }
 
+    fun defaultErrorCorrectionFor(formatCode: Int): String = when (formatCode) {
+        Barcode.FORMAT_QR_CODE -> "Reed-Solomon (Auto)"
+        Barcode.FORMAT_DATA_MATRIX -> "ECC 200 (Reed-Solomon)"
+        Barcode.FORMAT_AZTEC -> "Reed-Solomon (23% default)"
+        Barcode.FORMAT_PDF417 -> "Reed-Solomon (0–8)"
+        Barcode.FORMAT_EAN_13, Barcode.FORMAT_EAN_8,
+        Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E -> "Mod-10 Check Digit"
+        Barcode.FORMAT_CODE_128 -> "Mod-103 Checksum"
+        Barcode.FORMAT_CODE_39, Barcode.FORMAT_CODE_93 -> "Mod-43 / Dual Check"
+        else -> "Symbology Check"
+    }
+
     fun isProductBarcodeFormat(formatCode: Int): Boolean = when (formatCode) {
         Barcode.FORMAT_EAN_13,
         Barcode.FORMAT_EAN_8,
@@ -39,23 +53,41 @@ object OfflineBarcodeParser {
         else -> false
     }
 
-    fun parse(rawValue: String, formatCode: Int): ParsedBarcode {
+    fun parse(
+        rawValue: String,
+        formatCode: Int,
+        processingTimeMs: Long = 0L,
+        errorCorrectionOverride: String? = null
+    ): ParsedBarcode {
+        val startNs = System.nanoTime()
+        val result = parseInternal(rawValue, formatCode)
+        val elapsedMs = if (processingTimeMs > 0L) {
+            processingTimeMs
+        } else {
+            ((System.nanoTime() - startNs) / 1_000_000L).coerceAtLeast(1L)
+        }
+        return result.copy(
+            dataSizeBytes = rawValue.toByteArray(Charsets.UTF_8).size,
+            errorCorrection = errorCorrectionOverride?.takeIf { it.isNotBlank() }
+                ?: defaultErrorCorrectionFor(formatCode),
+            processingTimeMs = elapsedMs
+        )
+    }
+
+    private fun parseInternal(rawValue: String, formatCode: Int): ParsedBarcode {
         val trimmed = rawValue.trim()
         val formatLabel = formatNameFor(formatCode)
 
-        // 1. 2FA / OTP Account URI (otpauth:// or otpauth-migration://)
         if (trimmed.startsWith("otpauth://", ignoreCase = true) ||
             trimmed.startsWith("otpauth-migration://", ignoreCase = true)
         ) {
             return parseOtpAuth(trimmed, formatCode, formatLabel)
         }
 
-        // 2. Wi-Fi Credentials (WIFI:T:WPA;S:MyNet;P:Pass;; or WIFI:S:...;)
         if (trimmed.startsWith("WIFI:", ignoreCase = true)) {
             return parseWifi(trimmed, formatCode, formatLabel)
         }
 
-        // 3. Contact (vCard / MeCard / Email / Phone / SMS / Geo)
         if (trimmed.startsWith("BEGIN:VCARD", ignoreCase = true)) {
             return parseVCard(trimmed, formatCode, formatLabel)
         }
@@ -78,7 +110,9 @@ object OfflineBarcodeParser {
                 subtitle = "Phone contact action",
                 primaryCopyValue = number.ifBlank { trimmed },
                 fields = listOf(ParsedField("Phone", number)),
-                actionUri = "tel:$number"
+                actionUri = "tel:$number",
+                contactInfo = ContactInfo(phone = number),
+                phoneNumber = number
             )
         }
         if (trimmed.startsWith("smsto:", ignoreCase = true) ||
@@ -100,11 +134,11 @@ object OfflineBarcodeParser {
                 subtitle = if (message.isNotBlank()) message else "SMS shortcut",
                 primaryCopyValue = recipient.ifBlank { trimmed },
                 fields = fields,
-                actionUri = "smsto:$recipient"
+                actionUri = "smsto:$recipient",
+                phoneNumber = recipient.takeIf { it.isNotBlank() }
             )
         }
 
-        // 4. Web Links / URLs
         if (looksLikeUrl(trimmed)) {
             val normalizedUrl = if (trimmed.startsWith("www.", ignoreCase = true)) {
                 "https://$trimmed"
@@ -131,7 +165,6 @@ object OfflineBarcodeParser {
             )
         }
 
-        // 5. Geo coordinates
         if (trimmed.startsWith("geo:", ignoreCase = true)) {
             val coords = trimmed.substringAfter(":").substringBefore("?")
             return ParsedBarcode(
@@ -147,7 +180,6 @@ object OfflineBarcodeParser {
             )
         }
 
-        // 6. Product / Industrial 1D Barcodes (or pure numeric EAN/UPC/ISBN)
         if (isProductBarcodeFormat(formatCode) || isIsbnLike(trimmed)) {
             val isIsbn = (formatCode == Barcode.FORMAT_EAN_13 &&
                 (trimmed.startsWith("978") || trimmed.startsWith("979"))) || isIsbnLike(trimmed)
@@ -168,7 +200,6 @@ object OfflineBarcodeParser {
             )
         }
 
-        // 7. Plain Text fallback
         val firstLine = trimmed.lineSequence().firstOrNull()?.take(80).orEmpty()
         return ParsedBarcode(
             rawValue = rawValue,
@@ -227,7 +258,13 @@ object OfflineBarcodeParser {
             title = ssid.ifBlank { "Wi-Fi Network" },
             subtitle = subtitleParts.joinToString(" • "),
             primaryCopyValue = if (password.isNotEmpty()) password else ssid.ifBlank { raw },
-            fields = fields
+            fields = fields,
+            wifiInfo = WifiInfo(
+                ssid = ssid,
+                password = password,
+                security = authType,
+                isHidden = hidden
+            )
         )
     }
 
@@ -336,6 +373,9 @@ object OfflineBarcodeParser {
             emails.firstOrNull()
         ).joinToString(" • ").ifBlank { "vCard Contact" }
 
+        val firstPhone = phones.firstOrNull()
+        val firstEmail = emails.firstOrNull()
+
         return ParsedBarcode(
             rawValue = raw,
             formatCode = formatCode,
@@ -343,9 +383,19 @@ object OfflineBarcodeParser {
             category = ScanCategory.CONTACT,
             title = name.ifBlank { org.ifBlank { "Contact Card" } },
             subtitle = subtitle,
-            primaryCopyValue = phones.firstOrNull() ?: emails.firstOrNull() ?: name.ifBlank { raw },
+            primaryCopyValue = firstPhone ?: firstEmail ?: name.ifBlank { raw },
             fields = fields,
-            actionUri = phones.firstOrNull()?.let { "tel:$it" } ?: emails.firstOrNull()?.let { "mailto:$it" }
+            actionUri = firstPhone?.let { "tel:$it" } ?: firstEmail?.let { "mailto:$it" },
+            contactInfo = ContactInfo(
+                name = name,
+                organization = org,
+                phone = firstPhone.orEmpty(),
+                email = firstEmail.orEmpty(),
+                address = address,
+                website = url
+            ),
+            phoneNumber = firstPhone,
+            emailAddress = firstEmail
         )
     }
 
@@ -389,7 +439,15 @@ object OfflineBarcodeParser {
                 .joinToString(" • ").ifBlank { "MeCard Contact" },
             primaryCopyValue = phone.ifBlank { email.ifBlank { raw } },
             fields = fields,
-            actionUri = phone.takeIf { it.isNotBlank() }?.let { "tel:$it" }
+            actionUri = phone.takeIf { it.isNotBlank() }?.let { "tel:$it" },
+            contactInfo = ContactInfo(
+                name = name,
+                phone = phone,
+                email = email,
+                website = url
+            ),
+            phoneNumber = phone.takeIf { it.isNotBlank() },
+            emailAddress = email.takeIf { it.isNotBlank() }
         )
     }
 
@@ -421,7 +479,9 @@ object OfflineBarcodeParser {
                 subtitle = sub.ifBlank { "Email message" },
                 primaryCopyValue = to.ifBlank { raw },
                 fields = fields,
-                actionUri = to.takeIf { it.isNotBlank() }?.let { "mailto:$it" }
+                actionUri = to.takeIf { it.isNotBlank() }?.let { "mailto:$it" },
+                contactInfo = ContactInfo(email = to),
+                emailAddress = to.takeIf { it.isNotBlank() }
             )
         } else {
             val address = raw.substringAfter(":").substringBefore("?")
@@ -440,7 +500,9 @@ object OfflineBarcodeParser {
                 subtitle = subject.ifBlank { "Email contact" },
                 primaryCopyValue = address.ifBlank { raw },
                 fields = fields,
-                actionUri = "mailto:$address"
+                actionUri = "mailto:$address",
+                contactInfo = ContactInfo(email = address),
+                emailAddress = address.takeIf { it.isNotBlank() }
             )
         }
     }
