@@ -1,0 +1,22 @@
+<resources>
+    <string name="app_name">ScanVault</string>
+    <string name="tab_scan">Scan</string>
+    <string name="tab_history">History</string>
+    <string name="scan_hint">Align any QR code or barcode inside the reticle</string>
+    <string name="scan_from_image">Import Image</string>
+    <string name="torch_toggle">Toggle flashlight</string>
+    <string name="camera_flip">Switch camera</string>
+    <string name="camera_permission_title">Camera Access Needed</string>
+    <string name="camera_permission_body">ScanVault processes camera frames 100% locally on your device. No images or scans ever leave your phone.</string>
+    <string name="grant_camera_permission">Enable Camera</string>
+    <string name="copy_result">Copy</string>
+    <string name="copied_toast">Copied to clipboard</string>
+    <string name="history_search_hint">Search scans, URLs, SSIDs, codes…</string>
+    <string name="history_empty_title">No scans recorded yet</string>
+    <string name="history_empty_body">Scan a QR code, product barcode, Wi-Fi tag, or 2FA key with your camera or import an image.</string>
+    <string name="clear_all_history">Clear All</string>
+    <string name="clear_history_dialog_title">Clear all scan history?</string>
+    <string name="clear_history_dialog_body">This permanently removes every saved scan from your device.</string>
+    <string name="confirm_clear">Delete All</string>
+    <string name="cancel">Cancel</string>
+</resources>

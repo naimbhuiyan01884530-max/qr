@@ -1,0 +1,6 @@
+{
+  "name": "ScanVault",
+  "description": "Purely offline QR code and barcode scanner with on-device camera and image scanning, structured format parsing, one-tap copy, and local scan history.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
